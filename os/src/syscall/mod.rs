@@ -25,9 +25,19 @@ mod fs;
 mod process;
 
 use fs::*;
-use process::*;
+pub use process::*;
+
+use crate::task::change_system_call_time;
+
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
+    // if syscall_id == 410 {
+    //     println!("aaaaaaaaaaaaaaa-----------------") ;
+    // }
+    change_system_call_time(syscall_id);
+    // if syscall_id == 410 {
+    //     println!("ccccccccccccc------------------") ;
+    // }
     match syscall_id {
         SYSCALL_WRITE => sys_write(args[0], args[1] as *const u8, args[2]),
         SYSCALL_EXIT => sys_exit(args[0] as i32),
