@@ -1,6 +1,6 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
 
-use super::{frame_alloc, FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
+use super::{frame_alloc, FrameTracker, PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
 use alloc::vec;
 use alloc::vec::Vec;
 use bitflags::*;
@@ -8,13 +8,21 @@ use bitflags::*;
 bitflags! {
     /// page table entry flags
     pub struct PTEFlags: u8 {
+    /// xxx
         const V = 1 << 0;
+    /// xxx
         const R = 1 << 1;
+    /// xxx
         const W = 1 << 2;
+    /// xxx
         const X = 1 << 3;
+    /// xxx
         const U = 1 << 4;
+    /// xxx
         const G = 1 << 5;
+    /// xxx
         const A = 1 << 6;
+    /// xxx
         const D = 1 << 7;
     }
 }
@@ -93,7 +101,7 @@ impl PageTable {
         let mut ppn = self.root_ppn;
         let mut result: Option<&mut PageTableEntry> = None;
         for (i, idx) in idxs.iter().enumerate() {
-            let pte = &mut ppn.get_pte_array()[*idx];
+            let pte = &mut ppn.get_pte_array()[*idx]; // 查页表得到页表项
             if i == 2 {
                 result = Some(pte);
                 break;
@@ -170,4 +178,14 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
         start = end_va.into();
     }
     v
+}
+/// translate_addr
+pub fn translate_addr<T>(token: usize, ptr: *const T) -> *mut T {
+    let page_table = PageTable::from_token(token);
+    let va = VirtAddr::from(ptr as usize);
+    let vpn = va.floor();
+    let ppn = page_table.translate(vpn).unwrap().ppn();
+    let pa: PhysAddr = ppn.into();
+    let offset = va.page_offset();
+    (pa.0 + offset) as *mut T
 }

@@ -15,7 +15,11 @@ mod switch;
 mod task;
 
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::address::VPNRange;
+use crate::mm::{MapPermission, VirtAddr};
 use crate::sync::UPSafeCell;
+use crate::syscall::TaskInfo;
+use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
 use lazy_static::*;
@@ -140,6 +144,12 @@ impl TaskManager {
             let mut inner = self.inner.exclusive_access();
             let current = inner.current_task;
             inner.tasks[next].task_status = TaskStatus::Running;
+
+            //first_time
+            if inner.tasks[next].first_time == 0 {
+                inner.tasks[next].first_time = get_time_ms() as usize;
+            }
+
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
@@ -152,6 +162,93 @@ impl TaskManager {
         } else {
             panic!("All applications completed!");
         }
+    }
+
+    fn get_current_task_info(&self) -> TaskInfo {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let first_time = inner.tasks[current].first_time;
+        let info_time = get_time_ms() as usize;
+        inner.tasks[current].task_info.time = info_time - first_time;
+
+        let task = inner.tasks[current].task_info.clone();
+
+        drop(inner);
+        task
+    }
+
+    fn change_system_call_time(&self, id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].task_info.syscall_times[id] += 1;
+
+        drop(inner);
+    }
+
+    fn mmap(&self, start: usize, len: usize, prot: usize) -> isize{
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        
+        let start_va: VirtAddr= start.into();
+        let end_va: VirtAddr = (start + len).into();
+        if !start_va.aligned() {
+            return -1;
+        }
+
+        if (prot & 0x7 == 0) || (prot & !0x7 != 0) {
+            return -1;
+        }
+        let prot = (prot & 0x7) as u8;
+        let mut permission = MapPermission::U;
+        if prot & 0b001 != 0 {
+            permission |= MapPermission::R;
+        }
+        if prot & 0b010 != 0 {
+            permission |= MapPermission::W;
+        }
+        if prot & 0b100 != 0 {
+            permission |= MapPermission::X;
+        }
+        // println!("cur: {}, prot: {}, permission: {:?}", cur, prot, permission);
+
+        let start_vpn = start_va.floor();
+        let end_vpn = end_va.ceil();
+        let vpn_range = VPNRange::new(start_vpn, end_vpn);
+        for vpn in vpn_range{
+            if let Some(pte) = inner.tasks[cur].memory_set.translate(vpn){
+                if pte.is_valid(){
+                return -1;
+                }
+            }
+        }
+
+        inner.tasks[cur].memory_set.insert_framed_area(start_va, end_va, permission);
+        
+        drop(inner);
+
+        0
+    }
+
+    fn munmap(&self, start: usize, len: usize) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+
+        let start_va: VirtAddr= start.into();
+        let end_va: VirtAddr = (start + len).into();
+        if !start_va.aligned() {
+            return -1;
+        }
+
+        let start_vpn = start_va.floor();
+        let end_vpn = end_va.ceil();
+        let vpn_range = VPNRange::new(start_vpn, end_vpn);
+        for vpn in vpn_range{
+            if let None = inner.tasks[cur].memory_set.translate(vpn){
+                return -1;
+            }
+        }
+
+        inner.tasks[cur].memory_set.munmap(vpn_range)
     }
 }
 
@@ -201,4 +298,23 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+
+/// get current task info
+pub fn get_current_task_info() -> TaskInfo {
+    TASK_MANAGER.get_current_task_info()
+}
+/// change time
+pub fn change_system_call_time(id: usize) {
+    TASK_MANAGER.change_system_call_time(id);
+}
+
+/// mmap
+pub fn mmap(start: usize, len: usize, prot: usize) -> isize{
+    TASK_MANAGER.mmap(start, len, prot)
+}
+
+/// munmap
+pub fn munmap(start: usize, len: usize) -> isize {
+    TASK_MANAGER.munmap(start, len)
 }

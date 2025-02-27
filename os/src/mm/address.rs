@@ -158,11 +158,11 @@ impl From<PhysPageNum> for PhysAddr {
 impl VirtPageNum {
     /// Get the indexes of the page table entry
     pub fn indexes(&self) -> [usize; 3] {
-        let mut vpn = self.0;
-        let mut idx = [0usize; 3];
-        for i in (0..3).rev() {
-            idx[i] = vpn & 511;
-            vpn >>= 9;
+        let mut vpn = self.0;        // 获取虚拟页号
+        let mut idx = [0usize; 3];   // 用于存储索引的数组
+        for i in (0..3).rev() {      // 从高位到低位提取索引
+            idx[i] = vpn & 511;      // 提取最低 9 位
+            vpn >>= 9;               // 右移 9 位
         }
         idx
     }
@@ -217,13 +217,16 @@ impl<T> SimpleRange<T>
 where
     T: StepByOne + Copy + PartialEq + PartialOrd + Debug,
 {
+    /// xxx
     pub fn new(start: T, end: T) -> Self {
         assert!(start <= end, "start {:?} > end {:?}!", start, end);
         Self { l: start, r: end }
     }
+    /// xxx
     pub fn get_start(&self) -> T {
         self.l
     }
+    /// xxx
     pub fn get_end(&self) -> T {
         self.r
     }
@@ -250,6 +253,7 @@ impl<T> SimpleRangeIterator<T>
 where
     T: StepByOne + Copy + PartialEq + PartialOrd + Debug,
 {
+    /// xxx
     pub fn new(l: T, r: T) -> Self {
         Self { current: l, end: r }
     }
